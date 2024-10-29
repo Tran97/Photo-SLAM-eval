@@ -34,10 +34,21 @@ def save_pose_as_tum(path, poses):
             f.write(line)
             i+=1
 
+# Normalize path
+dataset_path = os.path.normpath(args.replica_dataset_path)
+
+# Loop over folders in dataset path
 folders = os.listdir(args.replica_dataset_path)
 for folder in folders:
-    path = os.path.join(args.replica_dataset_path, folder, "/traj.txt")
-    if os.path.exists(path):
-        poses = load_poses(path)
-        save_pose_as_kitti(path.replace("traj.txt", "pose.txt"), poses)
-        save_pose_as_tum(path.replace("traj.txt", "pose_TUM.txt"), poses)
+    folder_path = os.path.join(dataset_path, folder.strip())  # Strip whitespace from folder names
+    # only process if the item is a directory
+    if os.path.isdir(folder_path):
+        traj_path = os.path.join(folder_path, "traj.txt").strip()  # strip whitespace from traj.txt path   
+                # Check if traj.txt exists as a file, not a directory or symlink
+        if os.path.isfile(traj_path):
+            poses = load_poses(traj_path)
+            
+            if poses:  # Ensure poses were loaded successfully
+                tum_output_path = traj_path.replace("traj.txt", "GTpose_TUM_format.txt")
+                save_pose_as_tum(tum_output_path, poses)
+                
