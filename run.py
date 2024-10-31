@@ -14,6 +14,7 @@ from utils import *
 from pytorch_msssim import ssim
 import yaml
 import cv2
+
 def loadReplica(path):
     color_paths = sorted(glob.glob(os.path.join(path, "results/frame*.jpg")))
     #print(path, color_paths)
@@ -46,6 +47,8 @@ def loadEuRoC(path):
 def associate_frames(tstamp_image, tstamp_pose, max_dt=0.08):
     """ pair images, depths, and poses """
     associations = []
+    print(len(tstamp_image))
+    print(len(tstamp_pose))
     for i, t in enumerate(tstamp_image):
         j = np.argmin(np.abs(tstamp_pose - t))
         if (np.abs(tstamp_pose[j] - t) < max_dt):
@@ -54,17 +57,25 @@ def associate_frames(tstamp_image, tstamp_pose, max_dt=0.08):
 
 if __name__ == "__main__":
     # Set up command line argument parser
-    parser = ArgumentParser(description="evaluation script parameters")
-    parser.add_argument("result_path", type=str, default = None)
-    parser.add_argument("gt_path", type=str, default = None)
-    parser.add_argument("--correct_scale", action="store_true")
-    parser.add_argument("--show_plot", action="store_true")
-    args = parser.parse_args()
+    #parser = ArgumentParser(description="evaluation script parameters")
+    #parser.add_argument("result_path", type=str, default = None)
+    #parser.add_argument("gt_path", type=str, default = None)
+    #parser.add_argument("--correct_scale", action="store_true")
+    #parser.add_argument("--show_plot", action="store_true")
+    #args = parser.parse_args()
+    
+    result_path = "/dev_ws/results/replica_rgbd_0/office0/" 
+    gt_path = "/dev_ws/data/Replica/office0/" 
+    benchmark_path ="/dev_ws/benchmark"
+    show_plot = False
+    correct_scale = False
+    
+     
     sh_degree = 3
     gaussians = GaussianModel(sh_degree)
     bg_color = [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-    dirs = os.listdir(args.result_path)
+    dirs = os.listdir(result_path)
     # load model
     width, height, fovx, fovy = 0,0,0,0
     ts = []
@@ -74,16 +85,16 @@ if __name__ == "__main__":
         #print(file_name)
         if "shutdown" in file_name:
             iter = file_name.split("_")[0]
-            ply_path = os.path.join(args.result_path, file_name, "ply/point_cloud/iteration_{}".format(iter), "point_cloud.ply")
+            ply_path = os.path.join(result_path, file_name, "ply/point_cloud/iteration_{}".format(iter), "point_cloud.ply")
             gaussians.load_ply(ply_path)
-            with open (os.path.join(args.result_path, file_name, "ply", "cameras.json"), "r") as fin:
+            with open (os.path.join(result_path, file_name, "ply", "cameras.json"), "r") as fin:
                 camera_paras = json.load(fin)
             #print(camera_paras[0])
             width, height, fx, fy = camera_paras[0]["width"], camera_paras[0]["height"], camera_paras[0]["fx"], camera_paras[0]["fy"]
             fovx = focal2fov(fx, width)
             fovy = focal2fov(fy, height)
             
-            render_time = np.loadtxt(os.path.join(args.result_path, file_name, "render_time.txt"), delimiter=' ', dtype=np.unicode_)
+            render_time = np.loadtxt(os.path.join(result_path, file_name, "render_time.txt"), delimiter=' ', dtype=np.unicode_)
             render_time = render_time[:, 1].astype(np.float32)
             """ 
             for camera_para in camera_paras:
@@ -98,25 +109,26 @@ if __name__ == "__main__":
             """
 
     #load gt
-    if "replica" in args.gt_path.lower():
-        gt_color_paths, gt_tstamp = loadReplica(args.gt_path)
-    elif "kitti" in args.gt_path.lower():
-        gt_color_paths, gt_tstamp = loadKITTI(args.gt_path)   
-    elif "euroc" in args.gt_path.lower():
-        print(args.gt_path)
-        gt_color_paths, gt_tstamp = loadEuRoC(args.gt_path)  
+    if "replica" in gt_path.lower():
+        print("loading replica")
+        gt_color_paths, gt_tstamp = loadReplica(gt_path)
+    elif "kitti" in gt_path.lower():
+        gt_color_paths, gt_tstamp = loadKITTI(gt_path)   
+    elif "euroc" in gt_path.lower():
+        print(gt_path)
+        gt_color_paths, gt_tstamp = loadEuRoC(gt_path)  
     else:
-        gt_color_paths, gt_tstamp = loadTUM(args.gt_path)
+        gt_color_paths, gt_tstamp = loadTUM(gt_path)
     
     ## render and evaluation
-    pose_path = os.path.join(args.result_path, "CameraTrajectory_TUM.txt")
+    pose_path = os.path.join(result_path, "CameraTrajectory_TUM.txt")
     poses, tstamp = loadPose(pose_path)
     #print(gt_tstamp)
     associations = associate_frames(tstamp, gt_tstamp)
     distortion, K = None, None
     crop_edge = 0
-    if os.path.isfile(os.path.join(args.gt_path, "camera.yaml")):
-        with open(os.path.join(args.gt_path, "camera.yaml"), 'r') as fin:
+    if os.path.isfile(os.path.join(gt_path, "camera.yaml")):
+        with open(os.path.join(gt_path, "camera.yaml"), 'r') as fin:
             camera_model = yaml.safe_load(fin)
         K = np.eye(3)     
         K[0, 0] = camera_model["fx"]     
@@ -128,10 +140,10 @@ if __name__ == "__main__":
         re_u, re_v = cv2.initUndistortRectifyMap(K, distortion, None, K, (camera_model["W"], camera_model["H"]), m1type=cv2.CV_32FC1)
 
     #if not os.path.exists(os.path.join(args.result_path, "eval.txt")):
-    os.makedirs(os.path.join(args.result_path, "image"), exist_ok=True)
+    os.makedirs(os.path.join(result_path, "image"), exist_ok=True)
     psnr_list, ssim_list, lpips_list, time_list= [], [], [], []
     #for c2w, stamp in tqdm(zip(poses, tstamp), desc="rendering"):
-    for index  in trange(len(associations), desc="rendering {}".format(args.result_path.split("/")[-1])):
+    for index  in trange(len(associations), desc="rendering {}".format(result_path.split("/")[-1])):
         (result_indx, gt_indx) = associations[index]
         w2c = np.linalg.inv(poses[result_indx])
         cam = MiniCam(width, height, fovx, fovy, w2c)
@@ -167,7 +179,7 @@ if __name__ == "__main__":
         render_image = torch.clamp(render_image, 0.0, 1.0)
         predict_image_np = render_image.detach().cpu().numpy()
         predict_image_img = Image.fromarray(np.uint8(predict_image_np*255))
-        predict_image_img.save(os.path.join(args.result_path, "image", gt_color_paths[gt_indx].split("/")[-1]))
+        predict_image_img.save(os.path.join(result_path, "image", gt_color_paths[gt_indx].split("/")[-1]))
         
         psnr_list.append(val_psnr.item())
         ssim_list.append(val_ssim)
@@ -178,11 +190,11 @@ if __name__ == "__main__":
     ssim_list = np.array(ssim_list)
     lpips_list = np.array(lpips_list)
     time_list = np.array(time_list)
-    np.savetxt(os.path.join(args.result_path, "psnr.txt"), psnr_list)
-    np.savetxt(os.path.join(args.result_path, "ssim.txt"), ssim_list)
-    np.savetxt(os.path.join(args.result_path, "lpips.txt"), lpips_list)
+    np.savetxt(os.path.join(benchmark_path, "psnr.txt"), psnr_list)
+    np.savetxt(os.path.join(benchmark_path, "ssim.txt"), ssim_list)
+    np.savetxt(os.path.join(benchmark_path, "lpips.txt"), lpips_list)
 
-    with open(os.path.join(args.result_path, "TrackingTime.txt"), "r") as fin:
+    with open(os.path.join(result_path, "TrackingTime.txt"), "r") as fin:
         tracking_time = fin.readlines()
     #print(tracking_time)
     tracking_time = np.array(tracking_time[:-3]).astype(np.float32)
@@ -190,7 +202,7 @@ if __name__ == "__main__":
     #tracking_time = tracking_time[:-3].astype(np.float32) # supposed last three lines is comment
     #np.savetxt(os.path.join(args.result_path, "renderng_time.txt"), time_list)
     #np.savetxt(os.path.join(args.result_path, "eval.txt"), [np.mean(psnr_list), np.mean(ssim_list), np.mean(lpips_list)])
-    with open(os.path.join(args.result_path, "eval.txt"), "w") as fout:
+    with open(os.path.join(benchmark_path, "eval.txt"), "w") as fout:
         fout.write("psnr: {}\n".format(np.mean(psnr_list)))
         fout.write("ssim: {}\n".format(np.mean(ssim_list)))
         fout.write("lpips: {}\n".format(np.mean(lpips_list)))
@@ -212,7 +224,7 @@ if __name__ == "__main__":
     # load estimated poses
     traj_est = file_interface.read_tum_trajectory_file(pose_path)
     # load gt pose
-    if "kitti" in args.gt_path.lower():
+    if "kitti" in gt_path.lower():
         def loadKITTIPose(gt_path):
             scene = gt_path.split("/")[-1]
             gt_file = gt_path.replace(scene, 'poses/{}.txt'.format(scene))
@@ -232,7 +244,7 @@ if __name__ == "__main__":
 
             return pose_quat
         
-        pose_quat = loadKITTIPose(args.gt_path)
+        pose_quat = loadKITTIPose(gt_path)
         traj_ref = PoseTrajectory3D(positions_xyz=pose_quat[:,:3],         
                                         orientations_quat_wxyz=pose_quat[:,3:],         
                                         timestamps=np.array(gt_tstamp))
@@ -241,30 +253,30 @@ if __name__ == "__main__":
         #gt_file = args.gt_path.replace(scene, 'poses/{}.txt'.format(scene))
         #print(gt_file)
         #traj_ref = file_interface.read_kitti_poses_file(gt_file)
-    elif "replica" in args.gt_path.lower():
-        gt_file = os.path.join(args.gt_path, 'pose_TUM.txt')
+    elif "replica" in gt_path.lower():
+        gt_file = os.path.join(gt_path, 'pose_TUM.txt')
         traj_ref = file_interface.read_tum_trajectory_file(gt_file)
         #if not os.path.isfile(gt_file):
-    elif "euroc" in args.gt_path.lower():
-        gt_file = os.path.join(args.gt_path, 'mav0/state_groundtruth_estimate0/data.csv')
+    elif "euroc" in gt_path.lower():
+        gt_file = os.path.join(gt_path, 'mav0/state_groundtruth_estimate0/data.csv')
         traj_ref = file_interface.read_euroc_csv_trajectory(gt_file)
     else:
-        gt_file = os.path.join(args.gt_path, 'groundtruth.txt')   
+        gt_file = os.path.join(gt_path, 'groundtruth.txt')   
         traj_ref = file_interface.read_tum_trajectory_file(gt_file)
 
     traj_ref, traj_est = sync.associate_trajectories(traj_ref, traj_est, max_diff=0.1)
     result = main_ape.ape(traj_ref, traj_est, est_name='traj', 
-        pose_relation=PoseRelation.translation_part, align=True, correct_scale=args.correct_scale)
+        pose_relation=PoseRelation.translation_part, align=False, correct_scale=correct_scale)
     result_rotation_part = main_ape.ape(traj_ref, traj_est, est_name='rot', pose_relation=PoseRelation.rotation_part, 
-                                        align=True, correct_scale=args.correct_scale)
+                                        align=False, correct_scale=correct_scale)
 
-    out_path=os.path.join(args.result_path, "metrics_traj.txt")
+    out_path=os.path.join(benchmark_path, "metrics_traj.txt")
     with open(out_path, 'w') as fp:
         fp.write(result.pretty_str())
         fp.write(result_rotation_part.pretty_str())
     print(result)
 
-    if args.show_plot:
+    if show_plot:
         from evo.tools import plot
         from evo.tools.plot import PlotMode
         import matplotlib.pyplot as plt

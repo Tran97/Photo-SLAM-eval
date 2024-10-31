@@ -1,0 +1,48 @@
+version: "3.9"
+services:
+  # Base image containing dependencies.
+  dev:
+    image: lucasmogsan/gs_icp_slam_image:latest
+    container_name: photo_eval
+    # Interactive shell
+    stdin_open: true
+    tty: true
+    # Networking and IPC for ROS 2
+    network_mode: host  
+    ipc: host
+    # Needed to display graphical applications
+    environment:
+      # Allows graphical programs in the container.
+      - DISPLAY=${DISPLAY}
+      - QT_QPA_PLATFORM=xcb \
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    runtime: nvidia
+    privileged: true
+    volumes:
+      # Allows graphical programs in the container.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
+      - /dev/dri:/dev/dri:rw
+
+      - ..  /photo_slam/Replica:/dev_ws/data/Replica:rw
+      - ../photo_slam/rgbd_dataset_freiburg2_xyz:/dev_ws/data/rgbd_dataset_freiburg2_xyz
+      - .:/dev_ws/Photo-SLAM-eval:rw
+      - ../results:/dev_ws/results:rw
+      - ../benchmark:/dev_ws/benchmark:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    command: sleep infinity
+
+  viz:
+    extends: dev
+    image: photo_eval:viz
+    build:
+      context: .
+      dockerfile: Dockerfile
